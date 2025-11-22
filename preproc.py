@@ -2,54 +2,123 @@ import cv2
 
 import numpy as np
 
-def resize_keep_aspect(img, max_side=720):
-    h, w = img.shape[:2]
-    s = max_side / max(h, w)
-    return cv2.resize(img, (int(w*s), int(h*s)), interpolation=cv2.INTER_AREA) if s < 1 else img
+def preprocess_base (frame, target_size=(640, 360)):
+    #Rsized
+    frame_resized= cv2.resize(frame, target_size)
+    return frame_resized
 
-def gaussian_denoise(img, ksize=3, sigma=0):
-    ksize= max(1, ksize | 1)
-    return cv2.GaussianBlur(img, (ksize, ksize), sigma)
-
-def median_denoise(img, ksize=3):
-    ksize = max(1, ksize | 1)  # impar
-    return cv2.medianBlur(img, ksize)
-
-def bilateral_denoise(img, d=5, sigmaColor=50, sigmaSpace=5):
-    return cv2.bilateralFilter(img, d, sigmaColor, sigmaSpace)
-
-def clahe_ycrcb(img, clip=2.0, tile=8):
-    ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+def CLAHE(frame, clip_limit=2.0, tile_grid_size=(8, 8)):
+    #enhanced contrast 
+    ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
     y, cr, cb = cv2.split(ycrcb)
-    clahe = cv2.createCLAHE(clipLimit=float(clip), tileGridSize=(tile, tile))
-    y2 = clahe.apply(y)
-    return cv2.cvtColor(cv2.merge([y2, cr, cb]), cv2.COLOR_YCrCb2BGR)
 
-def clahe_lab(img, clip=2.0, tile=8):
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=float(clip), tileGridSize=(tile, tile))
-    l2 = clahe.apply(l)
-    return cv2.cvtColor(cv2.merge([l2, a, b]), cv2.COLOR_LAB2BGR)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
+    y_eq = clahe.apply(y)
 
-def gamma_correct(img, gamma=1.0):
-    gamma = max(0.1, float(gamma))
-    inv = 1.0 / gamma
-    table = (np.linspace(0, 1, 256) ** inv * 255).astype(np.uint8)
-    return cv2.LUT(img, table)
+    ycrcb_eq = cv2.merge((y_eq, cr, cb))
+    frame_eq = cv2.cvtColor(ycrcb_eq, cv2.COLOR_YCrCb2BGR)
+    return frame_eq
 
-def gray_world_white_balance(img):
-    b, g, r = cv2.split(img.astype(np.float32) + 1e-6)
-    mean = (b.mean() + g.mean() + r.mean()) / 3.0
-    b *= mean / b.mean(); g *= mean / g.mean(); r *= mean / r.mean()
-    out = cv2.merge([b, g, r])
-    return np.clip(out, 0, 255).astype(np.uint8)
+def GAMMA(frame, gamma=1.3):
+    #gamma < 1 light y gamma>1 dark
+    frame_float = frame.astype(np.float32) / 255.0
+    frame_gamma = np.power(frame_float, gamma)
+    frame_out = np.clip(frame_gamma * 255.0, 0 , 255).astype(np.uint8)
+    return frame_out
 
-def unsharp_mask(img, ksize=5, amount=1.0, threshold=0):
-    blur = cv2.GaussianBlur(img, (ksize | 1, ksize | 1), 0)
-    sharp = cv2.addWeighted(img, 1 + amount, blur, -amount, 0)
-    if threshold <= 0:
-        return sharp
-    mask = (np.abs(sharp.astype(np.int16) - img.astype(np.int16)) < threshold)
-    np.copyto(sharp, img, where=mask)
+def denoise (frame):
+    #Reduce noise for a better efficiency of the model 
+    denoised = cv2.fastNlMeansDenoisingColored(
+        frame, None,
+        h=5,
+        hColor=5,
+        templateWindowSize=7,
+        searchWindowSize=21
+    )
+    return denoised
+
+def sharpen (frame):
+    
+    kernel = np.array([[0, 1, 0],
+                       [-1, 5, -1],
+                       [0, -1, 0]])
+    sharp = cv2.filter2D(frame, -1, kernel)
     return sharp
+
+def medir_luma(frame):
+    
+    ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+    y, _, _ = cv2.split(ycrcb)
+    return float(y.mean())
+
+
+def preprocess_frame (frame):
+    
+    #Size
+    frame = preprocess_base(frame, (640, 360))
+
+
+    #measure how bright is the video
+    luma = medir_luma(frame)
+
+    print(luma)
+
+    if luma < 10:
+        #Very Dark video 
+        frame = CLAHE(frame, clip_limit=2.0, tile_grid_size=(8, 8))
+        frame = GAMMA(frame, gamma=0.85)
+        frame = sharpen(frame)
+    elif luma <50:
+        #Medium dark
+        frame = CLAHE(frame, clip_limit=1.8, tile_grid_size=(8, 8))
+        frame = GAMMA(frame, gamma=0.65)
+        
+    elif luma > 100:
+        frame = CLAHE(frame, clip_limit=1.0, tile_grid_size=(16, 16))
+    else:
+        pass
+         
+
+    frame = denoise(frame)
+    
+
+    return frame
+    
+
+    
+
+
+'''
+video_path = "C:/Users/adalc/Downloads/proyecto vision artificial/videos estaciones de tren/18866687-hd_1080_1920_30fps.mp4"
+
+while True:
+    cap = cv2.VideoCapture(video_path)
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break  # fin del video
+
+        frame_proc = preprocess_frame(frame)
+
+        cv2.imshow("Original", frame)
+        cv2.imshow("Preprocesado", frame_proc)
+
+        # Si presionas ESC -> sale por completo
+        key = cv2.waitKey(20) & 0xFF
+        if key == 27:  # ESC
+            cap.release()
+            cv2.destroyAllWindows()
+            exit()
+    
+    cap.release()
+
+    # Aquí espera a que presiones cualquier tecla para repetir el video
+    print("Video terminado. Presiona cualquier tecla para repetir o ESC para salir...")
+    key = cv2.waitKey(0) & 0xFF
+    if key == 27:  # ESC para salir
+        break
+
+cv2.destroyAllWindows()
+
+'''
