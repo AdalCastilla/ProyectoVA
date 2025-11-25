@@ -3,7 +3,8 @@ import cv2
 
 model_base = YOLO("yolov8n.pt")
 
-VIDEO_PATH = "C:/Users/adalc/Downloads/proyecto vision artificial/videos estaciones de tren/18866687-hd_1080_1920_30fps.mp4"
+"F:\Adal\Descargas\Proyecto Vision Artificial\caso_recortado.mp4"
+VIDEO_PATH = "F:\Adal\Descargas\Proyecto Vision Artificial\caso_recortado.mp4"
 cap = cv2.VideoCapture(VIDEO_PATH)
 
 while True:

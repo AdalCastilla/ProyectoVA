@@ -54,15 +54,16 @@ def medir_luma(frame):
 
 def preprocess_frame (frame):
     
-    #Size
+    
     frame = preprocess_base(frame, (640, 360))
 
 
     #measure how bright is the video
+    
     luma = medir_luma(frame)
 
     print(luma)
-
+    
     if luma < 10:
         #Very Dark video 
         frame = CLAHE(frame, clip_limit=2.0, tile_grid_size=(8, 8))
@@ -79,7 +80,7 @@ def preprocess_frame (frame):
         pass
          
 
-    frame = denoise(frame)
+    #frame = denoise(frame)
     
 
     return frame
